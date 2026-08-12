@@ -1,8 +1,14 @@
 package uploader
 
 import (
+	"bytes"
 	"context"
+	"fmt"
+	"image"
+	"image/jpeg"
+	_ "image/png"
 	"io"
+	"os"
 	"time"
 
 	"github.com/gabriel-vasile/mimetype"
@@ -108,17 +114,30 @@ func (u *Uploader) upload(ctx context.Context, elem Elem) error {
 	})
 
 	doc := message.UploadedDocument(f, caption).MIME(mime.String()).Filename(elem.File().Name())
-	// upload thumbnail TODO(iyear): maybe still unavailable
 	if thumb, ok := elem.Thumb(); ok {
-		if thumbFile, err := uploader.NewUploader(u.opts.Client).
-			FromReader(ctx, thumb.Name(), thumb); err == nil {
-			doc = doc.Thumb(thumbFile)
+		thumbFile, err := uploadThumbnail(ctx, u.opts.Client, thumb)
+		if err != nil {
+			return errors.Wrap(err, "upload thumbnail")
 		}
+		doc = doc.Thumb(thumbFile)
 	}
 
 	var media message.MediaOption = doc
 
 	switch {
+	case elem.AsVideo():
+		// Force video streaming upload (e.g. for MKV files).
+		// Try to get metadata via FFmpeg; if unavailable just upload with basic Video attributes.
+		vDoc := doc.Video().SupportsStreaming()
+		if vinfo, err := mediautil.GetVideoInfoFFmpeg(elem.FilePath()); err == nil {
+			vDoc = vDoc.
+				Duration(time.Duration(vinfo.Duration)*time.Second).
+				Resolution(vinfo.Width, vinfo.Height)
+		} else {
+			// Non-fatal: warn and proceed without metadata
+			_, _ = fmt.Fprintf(os.Stderr, "warning: could not extract video metadata: %v\n", err)
+		}
+		media = vDoc
 	case mediautil.IsImage(mime.String()) && elem.AsPhoto():
 		// webp should be uploaded as document
 		if mime.String() == "image/webp" {
@@ -152,4 +171,72 @@ func (u *Uploader) upload(ctx context.Context, elem Elem) error {
 	}
 
 	return nil
+}
+
+const (
+	thumbnailMaxDimension = 320
+	thumbnailMaxSize      = 200 * 1024
+)
+
+// uploadThumbnail converts a JPEG or PNG thumbnail to Telegram's required JPEG
+// format, bounds its dimensions and uploads it as an InputFile.
+func uploadThumbnail(ctx context.Context, client *tg.Client, thumb File) (tg.InputFileClass, error) {
+	if _, err := thumb.Seek(0, io.SeekStart); err != nil {
+		return nil, errors.Wrap(err, "seek thumbnail")
+	}
+
+	img, _, err := image.Decode(thumb)
+	if err != nil {
+		return nil, errors.Wrap(err, "decode thumbnail")
+	}
+
+	img = resizeThumbnail(img)
+	data, err := encodeThumbnail(img)
+	if err != nil {
+		return nil, err
+	}
+
+	return uploader.NewUploader(client).
+		WithPartSize(MaxPartSize).
+		FromBytes(ctx, "thumb.jpg", data)
+}
+
+func resizeThumbnail(src image.Image) image.Image {
+	bounds := src.Bounds()
+	width, height := bounds.Dx(), bounds.Dy()
+	if width <= thumbnailMaxDimension && height <= thumbnailMaxDimension {
+		return src
+	}
+
+	newWidth, newHeight := thumbnailMaxDimension, thumbnailMaxDimension
+	if width > height {
+		newHeight = height * thumbnailMaxDimension / width
+	} else {
+		newWidth = width * thumbnailMaxDimension / height
+	}
+
+	dst := image.NewNRGBA(image.Rect(0, 0, newWidth, newHeight))
+	for y := 0; y < newHeight; y++ {
+		for x := 0; x < newWidth; x++ {
+			srcX := bounds.Min.X + x*width/newWidth
+			srcY := bounds.Min.Y + y*height/newHeight
+			dst.Set(x, y, src.At(srcX, srcY))
+		}
+	}
+
+	return dst
+}
+
+func encodeThumbnail(img image.Image) ([]byte, error) {
+	for _, quality := range []int{85, 75, 65, 55, 45, 35, 25} {
+		var buf bytes.Buffer
+		if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: quality}); err != nil {
+			return nil, errors.Wrap(err, "encode thumbnail as JPEG")
+		}
+		if buf.Len() <= thumbnailMaxSize {
+			return buf.Bytes(), nil
+		}
+	}
+
+	return nil, fmt.Errorf("thumbnail exceeds Telegram's %d KB limit after JPEG compression", thumbnailMaxSize/1024)
 }

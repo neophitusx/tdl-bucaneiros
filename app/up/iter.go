@@ -2,6 +2,7 @@ package up
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 	"time"
@@ -15,7 +16,6 @@ import (
 	"github.com/gotd/td/telegram/peers"
 
 	"github.com/iyear/tdl/core/uploader"
-	"github.com/iyear/tdl/core/util/mediautil"
 	"github.com/iyear/tdl/core/util/tutil"
 	"github.com/iyear/tdl/pkg/texpr"
 )
@@ -37,6 +37,7 @@ type iter struct {
 	chat    string
 	topic   int
 	photo   bool
+	video   bool
 	remove  bool
 	delay   time.Duration
 	manager *peers.Manager
@@ -46,7 +47,7 @@ type iter struct {
 	file uploader.Elem
 }
 
-func newIter(files []*File, to, caption *vm.Program, chat string, topic int, photo, remove bool, delay time.Duration, manager *peers.Manager) *iter {
+func newIter(files []*File, to, caption *vm.Program, chat string, topic int, photo, video, remove bool, delay time.Duration, manager *peers.Manager) *iter {
 	return &iter{
 		files:   files,
 		to:      to,
@@ -54,6 +55,7 @@ func newIter(files []*File, to, caption *vm.Program, chat string, topic int, pho
 		chat:    chat,
 		topic:   topic,
 		photo:   photo,
+		video:   video,
 		remove:  remove,
 		delay:   delay,
 		manager: manager,
@@ -118,13 +120,15 @@ func (i *iter) next(ctx context.Context, cur *File) (*iterElem, error) {
 	}
 
 	return &iterElem{
-		file:    file,
-		thumb:   thumb,
-		to:      to,
-		caption: caption,
-		thread:  thread,
+		file:     file,
+		thumb:    thumb,
+		to:       to,
+		caption:  caption,
+		thread:   thread,
+		filePath: cur.File,
 
 		asPhoto: i.photo,
+		asVideo: i.video,
 		remove:  i.remove,
 	}, nil
 }
@@ -231,10 +235,13 @@ func (i *iter) resolveThumb(path string) (*uploaderFile, error) {
 		return nil, nil
 	}
 
-	// has thumbnail
+	// Telegram video thumbnails must be JPEG or PNG at the command boundary.
 	mime, err := mimetype.DetectFile(path)
-	if err != nil || !mediautil.IsImage(mime.String()) { // TODO(iyear): jpg only
-		return nil, errors.Wrapf(err, "invalid thumbnail file: %v", path)
+	if err != nil {
+		return nil, errors.Wrapf(err, "detect thumbnail file: %v", path)
+	}
+	if mime.String() != "image/jpeg" && mime.String() != "image/png" {
+		return nil, fmt.Errorf("invalid thumbnail file %q: expected JPEG or PNG, got %s", path, mime.String())
 	}
 
 	thumb, err := os.Open(path)

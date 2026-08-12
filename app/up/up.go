@@ -41,6 +41,8 @@ type Options struct {
 	Remove   bool
 	Photo    bool
 	Caption  string
+	AsVideo  bool
+	Thumb    string
 }
 
 type Env struct {
@@ -67,6 +69,13 @@ func Run(ctx context.Context, c *telegram.Client, kvd storage.Storage, opts Opti
 	files, err := walk(opts.Paths, opts.Includes, opts.Excludes)
 	if err != nil {
 		return err
+	}
+
+	// If a global thumbnail was provided via --thumb, apply it to every file.
+	if opts.Thumb != "" {
+		for _, f := range files {
+			f.Thumb = opts.Thumb
+		}
 	}
 
 	color.Blue("Files count: %d", len(files))
@@ -97,7 +106,7 @@ func Run(ctx context.Context, c *telegram.Client, kvd storage.Storage, opts Opti
 	options := uploader.Options{
 		Client:   pool.Default(ctx),
 		Threads:  viper.GetInt(consts.FlagThreads),
-		Iter:     newIter(files, to, caption, opts.Chat, opts.Thread, opts.Photo, opts.Remove, viper.GetDuration(consts.FlagDelay), manager),
+		Iter:     newIter(files, to, caption, opts.Chat, opts.Thread, opts.Photo, opts.AsVideo, opts.Remove, viper.GetDuration(consts.FlagDelay), manager),
 		Progress: newProgress(upProgress),
 	}
 
