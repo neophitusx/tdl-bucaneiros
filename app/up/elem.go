@@ -12,13 +12,15 @@ import (
 )
 
 type iterElem struct {
-	file    *uploaderFile
-	thumb   *uploaderFile
-	to      peers.Peer
-	caption *entity.Builder
-	thread  int
+	file     *uploaderFile
+	thumb    *uploaderFile
+	to       peers.Peer
+	caption  *entity.Builder
+	thread   int
+	filePath string
 
 	asPhoto bool
+	asVideo bool
 	remove  bool
 }
 
@@ -47,6 +49,14 @@ func (e *iterElem) Thread() int {
 
 func (e *iterElem) AsPhoto() bool {
 	return e.asPhoto
+}
+
+func (e *iterElem) AsVideo() bool {
+	return e.asVideo
+}
+
+func (e *iterElem) FilePath() string {
+	return e.filePath
 }
 
 type uploaderFile struct {

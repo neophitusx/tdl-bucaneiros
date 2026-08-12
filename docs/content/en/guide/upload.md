@@ -95,6 +95,16 @@ tdl up -p /path/to/file -t 8 -l 4
 
 Custom caption is based on [expression](/reference/expr).
 
+By default, the caption is the uploaded filename (including its extension) in monospace formatting. Override it with `--caption` when needed.
+
+## Upload Video with a Thumbnail
+
+Use `--as_video` to send a file such as MKV as a streaming video. `ffprobe` must be available in `PATH` so tdl can provide the duration and dimensions to Telegram. Pass `--thumb` with a JPEG or PNG path to use a custom video thumbnail; PNG files are converted to Telegram-compatible JPEG thumbnails automatically.
+
+```bash
+tdl upload -p /path/to/video.mkv --as_video --thumb /path/to/thumbnail.png
+```
+
 List all available fields:
 
 {{< command >}}
