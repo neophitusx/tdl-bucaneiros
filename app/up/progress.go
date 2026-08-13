@@ -82,6 +82,11 @@ func (p *progress) closeFile(e *iterElem) error {
 		if err := e.thumb.Close(); err != nil {
 			return errors.Wrap(err, "close thumb")
 		}
+		if e.thumb.temporary {
+			if err := os.Remove(e.thumb.Name()); err != nil {
+				return errors.Wrap(err, "remove generated thumbnail")
+			}
+		}
 	}
 
 	return nil
