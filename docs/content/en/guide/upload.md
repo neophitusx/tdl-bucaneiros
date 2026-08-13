@@ -99,10 +99,13 @@ By default, the caption is the uploaded filename (including its extension) in mo
 
 ## Upload Video with a Thumbnail
 
-Use `--as-video` to send a file such as MKV as a streaming video. `ffprobe` must be available in `PATH` so tdl can provide the duration and dimensions to Telegram. Pass `--thumb` with a JPEG or PNG path to use a custom video thumbnail; PNG files are converted to Telegram-compatible JPEG thumbnails automatically.
+Use `--as-video` to send a file such as MKV as a streaming video. `ffprobe` must be available in `PATH` so tdl can provide the duration and dimensions to Telegram. Pass `--thumb` with a JPEG or PNG path to use a custom video thumbnail; PNG files are converted to Telegram-compatible JPEG thumbnails automatically. Use `--thumb auto` to extract a frame at 10% of the video duration (between 10 and 60 seconds); this also requires `ffmpeg` in `PATH`.
 
 ```bash
 tdl upload -p /path/to/video.mkv --as-video --thumb /path/to/thumbnail.png
+
+# Generate a thumbnail automatically
+tdl upload -p /path/to/video.mkv --as-video --thumb auto
 ```
 
 List all available fields:

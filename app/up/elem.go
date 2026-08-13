@@ -61,7 +61,8 @@ func (e *iterElem) FilePath() string {
 
 type uploaderFile struct {
 	*os.File
-	size int64
+	size      int64
+	temporary bool
 }
 
 func (u *uploaderFile) Name() string {

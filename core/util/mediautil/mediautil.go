@@ -1,9 +1,11 @@
 package mediautil
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -133,4 +135,58 @@ func GetVideoInfoFFmpeg(filePath string) (VideoInfo, error) {
 	}
 
 	return info, nil
+}
+
+// GenerateVideoThumbnailFFmpeg extracts a representative frame from a video
+// into a temporary JPEG file. The caller is responsible for removing the file.
+func GenerateVideoThumbnailFFmpeg(ctx context.Context, filePath string) (string, error) {
+	ffmpeg, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		return "", fmt.Errorf("ffmpeg not found in PATH (install FFmpeg to generate video thumbnails): %w", err)
+	}
+
+	info, err := GetVideoInfoFFmpeg(filePath)
+	if err != nil {
+		return "", fmt.Errorf("get video metadata: %w", err)
+	}
+
+	thumb, err := os.CreateTemp("", "tdl-thumbnail-*.jpg")
+	if err != nil {
+		return "", fmt.Errorf("create temporary thumbnail: %w", err)
+	}
+	thumbPath := thumb.Name()
+	if err := thumb.Close(); err != nil {
+		_ = os.Remove(thumbPath)
+		return "", fmt.Errorf("close temporary thumbnail: %w", err)
+	}
+
+	cmd := exec.CommandContext(ctx, ffmpeg,
+		"-y", "-ss", fmt.Sprintf("%.3f", thumbnailTimestamp(info.Duration)),
+		"-i", filePath, "-frames:v", "1", "-q:v", "2", thumbPath,
+	)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		_ = os.Remove(thumbPath)
+		return "", fmt.Errorf("ffmpeg thumbnail extraction failed: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+
+	return thumbPath, nil
+}
+
+func thumbnailTimestamp(duration int) float64 {
+	if duration <= 0 {
+		return 0
+	}
+
+	timestamp := float64(duration) * 0.1
+	if timestamp < 10 {
+		timestamp = 10
+	}
+	if timestamp > 60 {
+		timestamp = 60
+	}
+	if timestamp >= float64(duration) {
+		timestamp = float64(duration) / 2
+	}
+
+	return timestamp
 }

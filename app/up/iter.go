@@ -16,6 +16,7 @@ import (
 	"github.com/gotd/td/telegram/peers"
 
 	"github.com/iyear/tdl/core/uploader"
+	"github.com/iyear/tdl/core/util/mediautil"
 	"github.com/iyear/tdl/core/util/tutil"
 	"github.com/iyear/tdl/pkg/texpr"
 )
@@ -114,7 +115,11 @@ func (i *iter) next(ctx context.Context, cur *File) (*iterElem, error) {
 		return nil, errors.Wrap(err, "resolve caption")
 	}
 
-	thumb, err := i.resolveThumb(cur.Thumb)
+	if cur.Thumb == "auto" && !i.video {
+		return nil, errors.New("--thumb auto requires --as-video")
+	}
+
+	thumb, err := i.resolveThumb(ctx, cur.Thumb, cur.File)
 	if err != nil {
 		return nil, errors.Wrap(err, "resolve thumbnail")
 	}
@@ -230,9 +235,23 @@ func (i *iter) resolveCaption(env Env) (*entity.Builder, error) {
 	return caption, nil
 }
 
-func (i *iter) resolveThumb(path string) (*uploaderFile, error) {
+func (i *iter) resolveThumb(ctx context.Context, path, videoPath string) (*uploaderFile, error) {
 	if path == "" {
 		return nil, nil
+	}
+	if path == "auto" {
+		path, err := mediautil.GenerateVideoThumbnailFFmpeg(ctx, videoPath)
+		if err != nil {
+			return nil, err
+		}
+
+		thumb, err := os.Open(path)
+		if err != nil {
+			_ = os.Remove(path)
+			return nil, errors.Wrap(err, "open generated thumbnail")
+		}
+
+		return &uploaderFile{File: thumb, temporary: true}, nil
 	}
 
 	// Telegram video thumbnails must be JPEG or PNG at the command boundary.
