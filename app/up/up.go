@@ -43,6 +43,7 @@ type Options struct {
 	Caption  string
 	AsVideo  bool
 	Thumb    string
+	Spoiler  bool
 }
 
 type Env struct {
@@ -106,7 +107,7 @@ func Run(ctx context.Context, c *telegram.Client, kvd storage.Storage, opts Opti
 	options := uploader.Options{
 		Client:   pool.Default(ctx),
 		Threads:  viper.GetInt(consts.FlagThreads),
-		Iter:     newIter(files, to, caption, opts.Chat, opts.Thread, opts.Photo, opts.AsVideo, opts.Remove, viper.GetDuration(consts.FlagDelay), manager),
+		Iter:     newIter(files, to, caption, opts.Chat, opts.Thread, opts.Photo, opts.AsVideo, opts.Remove, opts.Spoiler, viper.GetDuration(consts.FlagDelay), manager),
 		Progress: newProgress(upProgress),
 	}
 

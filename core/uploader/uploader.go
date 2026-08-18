@@ -113,52 +113,68 @@ func (u *Uploader) upload(ctx context.Context, elem Elem) error {
 		return nil
 	})
 
-	doc := message.UploadedDocument(f, caption).MIME(mime.String()).Filename(elem.File().Name())
+	var thumbFile tg.InputFileClass
 	if thumb, ok := elem.Thumb(); ok {
-		thumbFile, err := uploadThumbnail(ctx, u.opts.Client, thumb)
+		thumbFile, err = uploadThumbnail(ctx, u.opts.Client, thumb)
 		if err != nil {
 			return errors.Wrap(err, "upload thumbnail")
 		}
-		doc = doc.Thumb(thumbFile)
 	}
 
-	var media message.MediaOption = doc
+	var media message.MediaOption
 
-	switch {
-	case elem.AsVideo():
-		// Force video streaming upload (e.g. for MKV files).
-		// Try to get metadata via FFmpeg; if unavailable just upload with basic Video attributes.
-		vDoc := doc.Video().SupportsStreaming()
-		if vinfo, err := mediautil.GetVideoInfoFFmpeg(elem.FilePath()); err == nil {
-			vDoc = vDoc.
-				Duration(time.Duration(vinfo.Duration)*time.Second).
-				Resolution(vinfo.Width, vinfo.Height)
-		} else {
-			// Non-fatal: warn and proceed without metadata
-			_, _ = fmt.Fprintf(os.Stderr, "warning: could not extract video metadata: %v\n", err)
+	if elem.Spoiler() {
+		// gotd's UploadedDocument/UploadedPhoto builders don't expose the
+		// Spoiler field, so build the raw tg structs to send the media hidden
+		// behind a spoiler warning.
+		media, err = spoilerMedia(elem, mime, f, thumbFile, caption)
+		if err != nil {
+			return err
 		}
-		media = vDoc
-	case mediautil.IsImage(mime.String()) && elem.AsPhoto():
-		// webp should be uploaded as document
-		if mime.String() == "image/webp" {
-			break
+	} else {
+		doc := message.UploadedDocument(f, caption).MIME(mime.String()).Filename(elem.File().Name())
+		if thumbFile != nil {
+			doc = doc.Thumb(thumbFile)
 		}
-		// upload as photo
-		media = message.UploadedPhoto(f, caption)
-	case mediautil.IsVideo(mime.String()):
-		// reset reader
-		if _, err = elem.File().Seek(0, io.SeekStart); err != nil {
-			return errors.Wrap(err, "seek file")
+
+		media = doc
+
+		switch {
+		case elem.AsVideo():
+			// Force video streaming upload (e.g. for MKV files).
+			// Try to get metadata via FFmpeg; if unavailable just upload with basic Video attributes.
+			vDoc := doc.Video().SupportsStreaming()
+			if vinfo, err := mediautil.GetVideoInfoFFmpeg(elem.FilePath()); err == nil {
+				vDoc = vDoc.
+					Duration(time.Duration(vinfo.Duration)*time.Second).
+					Resolution(vinfo.Width, vinfo.Height)
+			} else {
+				// Non-fatal: warn and proceed without metadata
+				_, _ = fmt.Fprintf(os.Stderr, "warning: could not extract video metadata: %v\n", err)
+			}
+			media = vDoc
+		case mediautil.IsImage(mime.String()) && elem.AsPhoto():
+			// webp should be uploaded as document
+			if mime.String() == "image/webp" {
+				break
+			}
+			// upload as photo
+			media = message.UploadedPhoto(f, caption)
+		case mediautil.IsVideo(mime.String()):
+			// reset reader
+			if _, err = elem.File().Seek(0, io.SeekStart); err != nil {
+				return errors.Wrap(err, "seek file")
+			}
+			if dur, w, h, err := mediautil.GetMP4Info(elem.File()); err == nil {
+				// #132. There may be some errors, but we can still upload the file
+				media = doc.Video().
+					Duration(time.Duration(dur)*time.Second).
+					Resolution(w, h).
+					SupportsStreaming()
+			}
+		case mediautil.IsAudio(mime.String()):
+			media = doc.Audio().Title(fsutil.GetNameWithoutExt(elem.File().Name()))
 		}
-		if dur, w, h, err := mediautil.GetMP4Info(elem.File()); err == nil {
-			// #132. There may be some errors, but we can still upload the file
-			media = doc.Video().
-				Duration(time.Duration(dur)*time.Second).
-				Resolution(w, h).
-				SupportsStreaming()
-		}
-	case mediautil.IsAudio(mime.String()):
-		media = doc.Audio().Title(fsutil.GetNameWithoutExt(elem.File().Name()))
 	}
 
 	_, err = message.NewSender(u.opts.Client).
@@ -171,6 +187,67 @@ func (u *Uploader) upload(ctx context.Context, elem Elem) error {
 	}
 
 	return nil
+}
+
+// spoilerMedia builds the raw tg media structs with the Spoiler field set, since
+// gotd's UploadedDocument/UploadedPhoto builders don't expose it.
+func spoilerMedia(elem Elem, mime *mimetype.MIME, f tg.InputFileClass, thumb tg.InputFileClass, caption styling.StyledTextOption) (message.MediaOption, error) {
+	// photos are uploaded as inputMediaUploadedPhoto
+	if mime.String() != "image/webp" && mediautil.IsImage(mime.String()) && elem.AsPhoto() {
+		photo := &tg.InputMediaUploadedPhoto{
+			Spoiler: true,
+			File:    f,
+		}
+		photo.SetFlags()
+
+		return message.Media(photo, caption), nil
+	}
+
+	attrs := []tg.DocumentAttributeClass{
+		&tg.DocumentAttributeFilename{FileName: elem.File().Name()},
+	}
+
+	switch {
+	case elem.AsVideo():
+		vAttr := &tg.DocumentAttributeVideo{SupportsStreaming: true}
+		if vinfo, err := mediautil.GetVideoInfoFFmpeg(elem.FilePath()); err == nil {
+			vAttr.Duration = (time.Duration(vinfo.Duration) * time.Second).Seconds()
+			vAttr.W = vinfo.Width
+			vAttr.H = vinfo.Height
+		} else {
+			// Non-fatal: warn and proceed without metadata
+			_, _ = fmt.Fprintf(os.Stderr, "warning: could not extract video metadata: %v\n", err)
+		}
+		attrs = append(attrs, vAttr)
+	case mediautil.IsVideo(mime.String()):
+		if _, err := elem.File().Seek(0, io.SeekStart); err != nil {
+			return nil, errors.Wrap(err, "seek file")
+		}
+		if dur, w, h, err := mediautil.GetMP4Info(elem.File()); err == nil {
+			// #132. There may be some errors, but we can still upload the file
+			attrs = append(attrs, &tg.DocumentAttributeVideo{
+				Duration:          (time.Duration(dur) * time.Second).Seconds(),
+				W:                 w,
+				H:                 h,
+				SupportsStreaming: true,
+			})
+		}
+	case mediautil.IsAudio(mime.String()):
+		attrs = append(attrs, &tg.DocumentAttributeAudio{
+			Title: fsutil.GetNameWithoutExt(elem.File().Name()),
+		})
+	}
+
+	document := &tg.InputMediaUploadedDocument{
+		Spoiler:    true,
+		File:       f,
+		Thumb:      thumb,
+		MimeType:   mime.String(),
+		Attributes: attrs,
+	}
+	document.SetFlags()
+
+	return message.Media(document, caption), nil
 }
 
 const (

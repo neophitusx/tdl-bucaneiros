@@ -28,4 +28,5 @@ type Elem interface {
 	AsPhoto() bool
 	AsVideo() bool
 	FilePath() string
+	Spoiler() bool
 }
