@@ -243,6 +243,15 @@ func (i *iter) resolveThumb(ctx context.Context, path, videoPath string) (*uploa
 		return nil, nil
 	}
 	if path == "auto" {
+		// only generate thumbnails for video files, skip others (e.g. plain text)
+		mime, err := mimetype.DetectFile(videoPath)
+		if err != nil {
+			return nil, errors.Wrapf(err, "detect video file: %v", videoPath)
+		}
+		if !mediautil.IsVideo(mime.String()) {
+			return nil, nil
+		}
+
 		path, err := mediautil.GenerateVideoThumbnailFFmpeg(ctx, videoPath)
 		if err != nil {
 			return nil, err
