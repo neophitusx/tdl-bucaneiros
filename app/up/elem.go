@@ -22,6 +22,7 @@ type iterElem struct {
 	asPhoto bool
 	asVideo bool
 	remove  bool
+	spoiler bool
 }
 
 func (e *iterElem) File() uploader.File {
@@ -57,6 +58,10 @@ func (e *iterElem) AsVideo() bool {
 
 func (e *iterElem) FilePath() string {
 	return e.filePath
+}
+
+func (e *iterElem) Spoiler() bool {
+	return e.spoiler
 }
 
 type uploaderFile struct {

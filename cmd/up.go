@@ -48,7 +48,8 @@ func NewUpload() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.Remove, "rm", false, "remove the uploaded files after uploading")
 	cmd.Flags().BoolVar(&opts.Photo, "photo", false, "upload the image as a photo instead of a file")
 	cmd.Flags().BoolVar(&opts.AsVideo, "as-video", false, "upload the file as a streaming video (e.g. MKV). Duration, width and height are extracted via FFmpeg (ffprobe must be in PATH).")
-	cmd.Flags().StringVar(&opts.Thumb, "thumb", "", "path to a thumbnail image (JPEG/PNG), or 'auto' to generate one with FFmpeg (used with --as-video)")
+	cmd.Flags().StringVar(&opts.Thumb, "thumb", "", "path to a thumbnail image (JPEG/PNG), or 'auto' to generate one with FFmpeg (used with --as-video) (ffmpeg must be in PATH).")
+	cmd.Flags().BoolVar(&opts.Spoiler, "spoiler", false, "cover the uploaded media with a spoiler effect")
 	cmd.Flags().StringVar(&opts.Caption, "caption", `"<code>"+FileName+FileExt+"</code>"`, "caption for the uploaded media")
 
 	// completion and validation
