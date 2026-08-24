@@ -29,7 +29,12 @@ func (i *iterElem) Msg() *tg.Message { return i.msg }
 
 func (i *iterElem) To() peers.Peer { return i.to }
 
-func (i *iterElem) Thread() int { return i.thread }
+func (i *iterElem) Thread() int {
+	if i.opts.topic != 0 {
+		return i.opts.topic
+	}
+	return i.thread
+}
 
 func (i *iterElem) AsSilent() bool { return i.opts.silent }
 

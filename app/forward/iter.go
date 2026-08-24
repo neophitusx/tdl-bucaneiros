@@ -31,6 +31,7 @@ type iterOptions struct {
 	dryRun  bool
 	grouped bool
 	delay   time.Duration
+	topic   int
 }
 
 type iter struct {

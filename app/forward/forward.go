@@ -37,6 +37,7 @@ type Options struct {
 	DryRun bool
 	Single bool
 	Desc   bool
+	Topic  int
 }
 
 func Run(ctx context.Context, c *telegram.Client, kvd storage.Storage, opts Options) (rerr error) {
@@ -97,6 +98,7 @@ func Run(ctx context.Context, c *telegram.Client, kvd storage.Storage, opts Opti
 			dryRun:  opts.DryRun,
 			grouped: !opts.Single,
 			delay:   viper.GetDuration(consts.FlagDelay),
+			topic:   opts.Topic,
 		}),
 		Progress: newProgress(fwProgress),
 		Threads:  viper.GetInt(consts.FlagThreads),
