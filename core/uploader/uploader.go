@@ -11,6 +11,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/disintegration/imaging"
 	"github.com/gabriel-vasile/mimetype"
 	"github.com/go-faster/errors"
 	"github.com/gotd/td/telegram/message"
@@ -292,20 +293,13 @@ func resizeThumbnail(src image.Image) image.Image {
 		newWidth = width * thumbnailMaxDimension / height
 	}
 
-	dst := image.NewNRGBA(image.Rect(0, 0, newWidth, newHeight))
-	for y := 0; y < newHeight; y++ {
-		for x := 0; x < newWidth; x++ {
-			srcX := bounds.Min.X + x*width/newWidth
-			srcY := bounds.Min.Y + y*height/newHeight
-			dst.Set(x, y, src.At(srcX, srcY))
-		}
-	}
+	src = imaging.Resize(src, newWidth, newHeight, imaging.Lanczos)
 
-	return dst
+	return imaging.Sharpen(src, 0.8)
 }
 
 func encodeThumbnail(img image.Image) ([]byte, error) {
-	for _, quality := range []int{85, 75, 65, 55, 45, 35, 25} {
+	for _, quality := range []int{95, 85, 75, 65, 55, 45, 35, 25} {
 		var buf bytes.Buffer
 		if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: quality}); err != nil {
 			return nil, errors.Wrap(err, "encode thumbnail as JPEG")
