@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"os/exec"
 	"strconv"
@@ -70,10 +71,11 @@ type VideoInfo struct {
 // ffprobeOutput is a minimal subset of ffprobe's JSON output.
 type ffprobeOutput struct {
 	Streams []struct {
-		CodecType string `json:"codec_type"`
-		Width     int    `json:"width"`
-		Height    int    `json:"height"`
-		Duration  string `json:"duration"` // seconds as string, may be missing
+		CodecType         string `json:"codec_type"`
+		Width             int    `json:"width"`
+		Height            int    `json:"height"`
+		SampleAspectRatio string `json:"sample_aspect_ratio"`
+		Duration          string `json:"duration"` // seconds as string, may be missing
 	} `json:"streams"`
 	Format struct {
 		Duration string `json:"duration"` // seconds as string
@@ -121,6 +123,22 @@ func GetVideoInfoFFmpeg(filePath string) (VideoInfo, error) {
 		if s.CodecType == "video" {
 			info.Width = s.Width
 			info.Height = s.Height
+
+			// Convert anamorphic video dimensions to their display dimensions.
+			// For square pixels (SAR 1:1), the stored dimensions are already correct.
+			if s.SampleAspectRatio != "" && s.SampleAspectRatio != "1:1" {
+				parts := strings.SplitN(s.SampleAspectRatio, ":", 2)
+				if len(parts) == 2 {
+					num, errNum := strconv.Atoi(parts[0])
+					den, errDen := strconv.Atoi(parts[1])
+					if errNum == nil && errDen == nil && num > 0 && den > 0 {
+						info.Width = int(math.Round(
+							float64(s.Width) * float64(num) / float64(den),
+						))
+					}
+				}
+			}
+
 			if info.Duration == 0 && s.Duration != "" {
 				if d, err := strconv.ParseFloat(s.Duration, 64); err == nil {
 					info.Duration = int(d)
@@ -161,8 +179,13 @@ func GenerateVideoThumbnailFFmpeg(ctx context.Context, filePath string) (string,
 	}
 
 	cmd := exec.CommandContext(ctx, ffmpeg,
-		"-y", "-ss", fmt.Sprintf("%.3f", thumbnailTimestamp(info.Duration)),
-		"-i", filePath, "-frames:v", "1", "-q:v", "2", thumbPath,
+		"-y",
+		"-ss", fmt.Sprintf("%.3f", thumbnailTimestamp(info.Duration)),
+		"-i", filePath,
+		"-vf", "scale=round(iw*sar/2)*2:ih,setsar=1",
+		"-frames:v", "1",
+		"-q:v", "2",
+		thumbPath,
 	)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		_ = os.Remove(thumbPath)
